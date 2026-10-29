@@ -86,9 +86,9 @@
 - 机器人必须是群管理员（删消息、限制成员、邀请链接权限），否则群管功能会静默失败并在日志里打出 `API NOT OK`。
 - 频道投稿发布要求机器人是频道管理员。
 
-## 定制开发
+## 定制
 
-这个模板是通用版：字段、文案、阈值都能自己改。如果你的社区有特殊流程（自定义投稿字段、审核规则、和其他系统打通等），需要定制版或代部署，可联系作者获取付费定制服务。
+字段、文案、阈值都在配置和代码里，自己改就行。真有特殊流程又懒得折腾的，也可以找我付费代改 / 代部署。
 
 ## License
 
@@ -98,96 +98,20 @@ MIT，见 [LICENSE](LICENSE)。
 
 # tg-group-guardian (English)
 
-A Telegram group-management + submission-review bot: **pure Python standard library, single file, zero third-party dependencies** — just run `python3 bot.py`. All settings live in one `config.json`; the source code hardcodes no group IDs, admin IDs, or secrets.
+A Telegram group-management + submission-review bot I run for my own community. Single file, stdlib only — `python3 bot.py`. Everything personal lives in `config.json`; the code has no group IDs, admin IDs or secrets baked in.
 
-## Features
+What it does:
 
-**Group management**
-- Button-based human verification for new members: newcomers are muted on join and must tap a button within a time limit to be unmuted; those who time out are removed automatically, and verification welcome messages clean themselves up
-- Automatic deletion of links/ads: warnings accumulate (default 3) and trigger an automatic 1-hour mute
-- Banned-word filter: the word list is a separate plain-text file, one word per line, editable anytime
-- Flood detection: rapid-fire messages are deleted automatically with a short mute (thresholds configurable)
-- Admin commands (send as a reply to the target message): `/mute`, `/unmute`, `/kick`, `/ban`, `/unban <id>`, `/id`
-- Mentioning the bot in the group, or using keywords like "submit / rules", triggers an automatic explainer reply (60-second cooldown, no spam)
+- Group management — new members must pass a button verification within a time limit (default 5 min) or they are removed; verification and welcome messages clean up after themselves. Links and ads are auto-deleted, warnings stack up to a mute (default: 3 warnings = 1 hour). Banned words are a plain text file. Flood detection, plus reply-based admin commands: `/mute`, `/unmute`, `/kick`, `/ban`, `/unban <id>`, `/id`. Mention the bot, or use the submission/rules keywords, and it answers with an explainer (60 s cooldown so it doesn't spam).
+- Submissions (optional, can be switched off entirely) — users DM photos/videos; consecutive sends merge into one post. The submitter adds a description, optionally structured by an AI pass (off by default, bring your own API key) and confirmed by the submitter first; then a super admin approves with a button and it posts to the channel. Anonymous or credited, rate-limited.
+- Join requests — DM the bot for a single-use personal invite link; join requests are forwarded to the super admin to approve or reject.
 
-**Submission review (can be disabled entirely)**
-- Users submit photos/videos by DM; rapid consecutive sends are merged into a single post (album-style, count configurable)
-- Submitters can add a text description: fill in a template, or optionally enable AI structuring (off by default, bring your own API key) that turns free text into uniform fields and sends it back to the submitter for confirmation
-- Anonymous or credited posting; only after the submitter confirms does it go to the super admin for review, and only after the admin approves via button is it published to the channel, with the caption merged into the same post
-- Submission rate limiting to prevent abuse
+Deploy: BotFather → save the token into its own file (chmod 600). `cp config.example.json config.json`, `cp banwords.example.txt banwords.txt`, fill both in. Run `python3 bot.py` in the foreground once to check it behaves, then park it under systemd (the unit example in the Chinese section above works as-is). State (warning counts, pending verifications, submission queue) is `state.json` next to the script, created automatically.
 
-**Join channel**
-- DM the bot and tap "Request to join": a single-use personal invite link is generated automatically
-- Join requests via link are forwarded to the super admin, who approves or rejects with buttons
+Config keys you will actually touch: `token_file`, `channel_id`, `managed_group_ids` (empty = every group it is in), `super_admin_id`, `verify_timeout_seconds`, `warnings_before_mute`, `mute_seconds`, `flood.*`, `submissions.enabled`, `submissions.max_media`, `submissions.rate_limit_*`. The rest (AI parsing options, text overrides) are in `config.example.json`, and the Chinese table above explains every key.
 
-## Deploy in 3 steps
+Notes: UI texts are Chinese string literals in `bot.py` — swap them freely. The bot must be a group admin (delete messages, restrict members, invite links) or moderation fails quietly with `API NOT OK` in the log; posting submissions needs channel admin too.
 
-1. **Create a bot and get a token**: message @BotFather on Telegram, send `/newbot`, and follow the prompts. Store the token in its own file, e.g. `/root/.tg-group-guardian_token` (permissions 600 recommended). Add the bot to your group and channel and make it an admin (it needs delete-message, ban/restrict, and invite-link permissions).
-2. **Fill in the config**: `cp config.example.json config.json` and edit the values to your own (see below); then `cp banwords.example.txt banwords.txt` and adjust the word list.
-3. **Run it**: first run it in the foreground to check everything works:
-
-   ```bash
-   python3 bot.py
-   ```
-
-   For a permanent install, use systemd (sample unit — replace the paths with yours):
-
-   ```ini
-   [Unit]
-   Description=tg-group-guardian
-   After=network-online.target
-
-   [Service]
-   WorkingDirectory=/opt/tg-group-guardian
-   ExecStart=/usr/bin/python3 /opt/tg-group-guardian/bot.py
-   Restart=always
-   RestartSec=5
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   Save it as `/etc/systemd/system/tg-group-guardian.service`, then run `systemctl enable --now tg-group-guardian`.
-
-Runtime state (warning counts, pending verifications, submission queue) is stored in `state.json` in the same directory and is generated automatically — no need to touch it.
-
-## Configuration (config.json)
-
-| Key | Description |
-| --- | --- |
-| `token_file` | Path to the file holding the bot token. The token never goes into the config, let alone the code. |
-| `channel_id` | Channel ID (starts with `-100`) where approved submissions are published. If you only use group management, any placeholder value works. Note: the personal invite link sent by the "Request to join" DM flow also points at this target; it works for both channels and groups. |
-| `managed_group_ids` | List of group IDs the bot manages. Empty array = it manages every group it is in; otherwise only the listed groups. |
-| `super_admin_id` | The super admin's numeric Telegram ID: submission reviews and join requests are sent to them; they count as an admin in every group. |
-| `verify_timeout_seconds` | Time limit for new-member verification (seconds), default 300 (5 minutes). |
-| `verify_pass_message_ttl_seconds` | How many seconds before the "verification passed" welcome message is auto-deleted, default 300; 0 = never delete. |
-| `warnings_before_mute` | Warnings needed to trigger a mute, default 3. |
-| `mute_seconds` | Mute duration for accumulated warnings (seconds), default 3600. |
-| `flood.max_messages` / `flood.window_seconds` / `flood.mute_seconds` | Flood detection: more than N messages within the window (seconds) → delete + mute for M seconds. Defaults: 6 messages in 10 seconds, 600-second mute. |
-| `banwords_file` | Path to the banned-words file (relative paths resolve against the bot.py directory). |
-| `submissions.enabled` | Master switch for submissions. When off, DMs only offer "Request to join". |
-| `submissions.max_media` | Max photos/videos merged into one submission, default 30. |
-| `submissions.rate_limit_count` / `submissions.rate_limit_window_seconds` | Submission rate limit: at most N submissions per window, default 5 per 3600 seconds. |
-| `submissions.fields` | The submission field list; the template, AI structuring, and confirmation draft are all generated from it. Defaults: Title / Category / Region / Description / Credit. |
-| `submissions.rules_text` | Submission rules text (shown on /start and at the submission entry point). Empty = built-in default text. |
-| `submissions.ai_parse.enabled` | AI structuring of submission descriptions, default **false (off)**. |
-| `submissions.ai_parse.api_key_file` | Path to a file holding your own API key (**bring your own key** — the code ships with no keys built in). |
-| `submissions.ai_parse.api_base` | An OpenAI-compatible chat completions endpoint, e.g. OpenRouter. |
-| `submissions.ai_parse.models` | Model names to try in order; on failure it moves to the next one automatically. |
-| `texts.welcome_extra` | Full override of the verification welcome text (supports a `{minutes}` placeholder for the verification window). Empty = default. |
-| `texts.mention_reply` | Fixed reply when the bot is mentioned in the group. Empty = default. |
-| `texts.group_rules` | Reply when someone asks for the "group rules". Empty = default. |
-
-## Notes
-
-- Language: the UI texts are in Chinese; they are plain strings in `bot.py` and can be replaced freely.
-- The bot must be a group admin (delete messages, restrict members, invite links), otherwise group-management features fail silently and log `API NOT OK`.
-- Publishing submissions to a channel requires the bot to be a channel admin.
-
-## Custom development
-
-This template is the generic edition: fields, texts, and thresholds are all yours to change. If your community has special workflows (custom submission fields, review rules, integrations with other systems), a custom edition or hosted deployment is available from the author as a paid service.
-
-## License
+Custom work: fields, texts and thresholds are all yours to change. If your community has a weird flow and you'd rather pay than tinker, I also take custom / deployment gigs.
 
 MIT, see [LICENSE](LICENSE).
